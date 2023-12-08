@@ -36,7 +36,7 @@ public class Lox {
         BufferedReader reader = new BufferedReader(input);
 
         while (true) {
-            System.out.print("]=> ");
+            System.out.print("==> ");
             String line = reader.readLine();
             if (line == null)
                 break; // readLine receives null on encountering EOF(Ctrl + D)
@@ -47,7 +47,7 @@ public class Lox {
 
     private static void run(String source) {
         Scanner scanner = new Scanner(source);
-        List<Tokens> tokens = scanner.scanTokens();
+        List<Token> tokens = scanner.scanTokens();
 
         for (Token token : tokens) {
             System.out.println(token);
