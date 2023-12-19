@@ -1,6 +1,6 @@
 package com.interpreter.lox;
 
-enum ExitCode {
+public enum ExitCode {
     INCORRECT_CMD_USAGE(64),
     INCORRECT_CODE_ERR(65);
 
@@ -8,5 +8,5 @@ enum ExitCode {
         this.exitCode = code;
     }
 
-    final int exitCode;
+    public final int exitCode;
 }
