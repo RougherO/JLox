@@ -130,7 +130,7 @@ public class Scanner {
                      * -> Also none of the code will be executed as hasError
                      * will be set to true
                      */
-                    Lox.error(line, "Unexpected Character");
+                    Lox.error(new Token(null, String.valueOf(c), null, line), "Unexpected Character");
                 }
                 break;
         }
@@ -219,7 +219,7 @@ public class Scanner {
         }
 
         if (isAtEnd()) {
-            Lox.error(line, "Unterminated string.");
+            Lox.error(new Token(null, String.valueOf(peek()), null, line), "Unterminated string.");
         } else {
             consume(); // consume the closing quote if any or return EOF
             // quotes are not part of string
