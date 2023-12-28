@@ -1,3 +1,26 @@
+/*
+ * expression   -> conditional ;
+ * conditional  -> equality ( "?" expression ":" conditional )? ; (*)  // My thoughts : conditional -> ( equality "?" expression ":" )* conditional ;
+ *                                                                                      conditional -> ( equality "?" expression ":" )* equality ;
+ *                                                                     // Also why we need condtional instead of simple expression there is because
+ *                                                                     // we can chain ternary ops like this E1 ? E2 : E3 ? E4 : E5 else we would have
+ *                                                                     // to use grouping to recurse back to conditionals(2nd example) 
+ *                                                                     // like E1 ? E2 : (E3 ? E4 : E5) which is probably better imo.
+ *                                                                     // Might change it in future releases
+ * equality     -> comparison ( ( "!=" | "==" ) comparison )* ;
+ * comparison   -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+ * term         -> factor ( ( "-" | "+" ) factor )* ;
+ * factor       -> unary ( ( "/" | "*" ) unary )*;
+ * postfix      -> primary ( "++" | "--" )* 
+ * primary      -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" 
+ *                 // Error production
+ *                 | ( "!=" | "==" ) equality
+ *                 | ( ">" | ">=" | "<" | "<=" ) comparison
+ *                 | ( "+" ) term
+ *                 | ( "/" | "*" ) factor ;
+ * (*) -> these have been taken from https://github.com/munificent/craftinginterpreters/blob/master/note/answers/chapter06_parsing.md
+ */
+
 package com.interpreter.lox;
 
 import java.util.List;
@@ -7,26 +30,44 @@ public class Parser {
         this.tokens = tokens;
     }
 
-    private static class ParserError extends RuntimeException {
-    }
-
     public Expr parse() {
         try {
-            return expression();
+            Expr expr = expression();
+            if (isAtEnd())
+                return expr;
+            else
+                throw panic("Expected operand here.");
         } catch (ParserError error) {
             return null;
         }
     }
 
     private Expr expression() {
-        return equality();
+        return conditional();
+    }
+
+    private Expr conditional() {
+        Expr expr = equality();
+
+        if (match(TokenType.Q_MARK)) {
+            Token operator = peekPrev();
+            Expr mid = expression();
+            if (match(TokenType.COLON)) {
+                Expr right = conditional();
+                expr = new Expr.Conditional(operator, expr, mid, right);
+            } else {
+                throw panic("Expected : after if branch");
+            }
+        }
+
+        return expr;
     }
 
     private Expr equality() {
         Expr expr = comparison();
 
-        while (match(TokenType.BANG, TokenType.BANG_EQUAL)) {
-            Token operator = consume();
+        while (match(TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL)) {
+            Token operator = peekPrev();
             Expr right = comparison();
             expr = new Expr.Binary(expr, operator, right);
         }
@@ -42,7 +83,7 @@ public class Parser {
                 TokenType.GREATER_EQUAL,
                 TokenType.LESS,
                 TokenType.LESS_EQUAL)) {
-            Token operator = consume();
+            Token operator = peekPrev();
             Expr right = term();
             expr = new Expr.Binary(expr, operator, right);
         }
@@ -54,7 +95,7 @@ public class Parser {
         Expr expr = factor();
 
         while (match(TokenType.PLUS, TokenType.MINUS)) {
-            Token operator = consume();
+            Token operator = peekPrev();
             Expr right = factor();
             expr = new Expr.Binary(expr, operator, right);
         }
@@ -66,7 +107,7 @@ public class Parser {
         Expr expr = unary();
 
         while (match(TokenType.STAR, TokenType.SLASH)) {
-            Token operator = consume();
+            Token operator = peekPrev();
             Expr right = unary();
             expr = new Expr.Binary(expr, operator, right);
         }
@@ -75,13 +116,26 @@ public class Parser {
     }
 
     private Expr unary() {
-        if (match(TokenType.BANG, TokenType.MINUS)) {
-            Token operator = consume();
+        if (match(
+                TokenType.BANG, TokenType.MINUS,
+                TokenType.MINUS_MINUS, TokenType.PLUS_PLUS)) {
+            Token operator = peekPrev();
             Expr right = unary();
             return new Expr.Unary(operator, right);
         }
 
-        return primary();
+        return postfix();
+    }
+
+    private Expr postfix() {
+        Expr expr = primary();
+
+        while (match(TokenType.PLUS_PLUS, TokenType.MINUS_MINUS)) {
+            Token operator = peekPrev();
+            expr = new Expr.PostFix(expr, operator);
+        }
+
+        return expr;
     }
 
     private Expr primary() {
@@ -92,28 +146,34 @@ public class Parser {
         if (match(TokenType.NIL))
             return new Expr.Literal(null);
         if (match(TokenType.NUMBER, TokenType.STRING))
-            return new Expr.Literal(consume().literal);
+            return new Expr.Literal(peekPrev().literal);
         if (match(TokenType.LEFT_PAREN)) {
-            consume();
             Expr expr = expression();
-            if (match(TokenType.RIGHT_PAREN)) {
-                consume();
-            } else {
+            if (!match(TokenType.RIGHT_PAREN)) {
                 throw panic("Expected ')' after expression.");
             }
             return new Expr.Grouping(expr);
         }
 
+        // Error handling
+        if (match(
+                TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL,
+                TokenType.GREATER, TokenType.GREATER_EQUAL, TokenType.LESS, TokenType.LESS_EQUAL,
+                TokenType.PLUS, TokenType.SLASH, TokenType.STAR)) {
+            /*
+             * Here we do not throw the error as it is not severe to
+             * cause our interpreter to go out of sync
+             * We just start reparsing from next available token
+             * as a new expression.
+             */
+            throw panic("Expected left hand side of '" + peekPrev().lexeme + "'");
+            // return expression();
+        }
+
         throw panic("Expected expression here.");
     }
 
-    private boolean match(TokenType... types) {
-        for (TokenType type : types) {
-            if (check(type)) {
-                return true;
-            }
-        }
-        return false;
+    private static class ParserError extends RuntimeException {
     }
 
     private ParserError panic(String message) {
@@ -123,7 +183,7 @@ public class Parser {
 
     private void synchronize() {
         while (!isAtEnd()) {
-            if (consume().type == TokenType.SEMICOLON)
+            if (peekPrev().type == TokenType.SEMICOLON)
                 return;
             switch (peek().type) {
                 case CLASS:
@@ -140,17 +200,25 @@ public class Parser {
     }
 
     private Token consume() {
-        return tokens.get(curernt++);
+        return tokens.get(current++);
     }
 
     private Token peek() {
-        return tokens.get(curernt);
+        return tokens.get(current);
     }
 
-    private boolean check(TokenType type) {
-        if (isAtEnd())
-            return false;
-        return peek().type == type;
+    private Token peekPrev() {
+        return tokens.get(current - 1);
+    }
+
+    private boolean match(TokenType... types) {
+        for (TokenType type : types) {
+            if (!isAtEnd() && peek().type == type) {
+                consume();
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isAtEnd() {
@@ -158,5 +226,5 @@ public class Parser {
     }
 
     private final List<Token> tokens;
-    private int curernt = 0;
+    private int current = 0;
 }

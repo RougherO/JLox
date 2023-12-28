@@ -6,6 +6,11 @@ public class AstPrinter implements Expr.Visitor<String> {
     }
 
     @Override
+    public String visitConditionalExpr(Expr.Conditional expr) {
+        return paranthesize("?:", expr.left, expr.mid, expr.right);
+    }
+
+    @Override
     public String visitBinaryExpr(Expr.Binary expr) {
         return paranthesize(expr.operator.lexeme, expr.left, expr.right);
     }
@@ -18,6 +23,11 @@ public class AstPrinter implements Expr.Visitor<String> {
     @Override
     public String visitUnaryExpr(Expr.Unary expr) {
         return paranthesize(expr.operator.lexeme, expr.right);
+    }
+
+    @Override
+    public String visitPostFixExpr(Expr.PostFix expr) {
+        return paranthesize(expr.operator.lexeme + '*', expr.left);
     }
 
     @Override

@@ -29,6 +29,8 @@ public class Lox {
 
         if (hasError)
             System.exit(ExitCode.INCORRECT_CODE_ERR.exitCode);
+        if (hasRuntimeError)
+            System.exit(ExitCode.INTERNAL_ERR.exitCode);
     }
 
     private static void runPrompt() throws IOException {
@@ -48,10 +50,20 @@ public class Lox {
     private static void run(String source) {
         Scanner scanner = new Scanner(source);
         List<Token> tokens = scanner.scanTokens();
+
+        if (hasError)
+            return;
+
         Parser parser = new Parser(tokens);
         Expr expression = parser.parse();
 
         if (hasError)
+            return;
+
+        Interpreter interpreter = new Interpreter();
+        interpreter.interprete(expression);
+
+        if (hasRuntimeError)
             return;
 
         System.out.println(new AstPrinter().print(expression));
@@ -65,9 +77,18 @@ public class Lox {
             report(token.line, "at '" + token.lexeme + "' ", message);
     }
 
+    public static void runtimeError(Token token, String message) {
+        hasRuntimeError = true;
+        if (token.type == TokenType.EOF)
+            report(token.line, "at end", message);
+        else
+            report(token.line, "at '" + token.lexeme + "' ", message);
+    }
+
     private static void report(int line, String where, String message) {
         System.err.println("[line " + line + "] Error " + where + ": " + message);
     }
 
     private static boolean hasError = false;
+    private static boolean hasRuntimeError = false;
 }

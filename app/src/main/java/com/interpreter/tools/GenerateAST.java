@@ -22,10 +22,12 @@ public class GenerateAST {
          * Defining the Grammar for our JLox
          */
         defineAST(outputDir, "Expr", Arrays.asList(
-                "Binary    : Expr left, Token operator, Expr right",
-                "Grouping  : Expr expression",
-                "Literal   : Object value",
-                "Unary     : Token operator, Expr right"));
+                "Conditional : Token operator, Expr left, Expr mid, Expr right",
+                "Binary      : Expr left, Token operator, Expr right",
+                "Grouping    : Expr expression",
+                "Literal     : Object value",
+                "Unary       : Token operator, Expr right",
+                "PostFix     : Expr left, Token operator"));
     }
 
     private static void defineAST(

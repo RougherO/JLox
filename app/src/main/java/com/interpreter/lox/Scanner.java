@@ -11,14 +11,26 @@ public class Scanner {
     }
 
     List<Token> scanTokens() {
-        while (!isAtEnd()) {
-            start = current;
-            scanToken();
+        try {
+            while (!isAtEnd()) {
+                start = current;
+                scanToken();
+            }
+        } catch (ScannerError e) {
+            return null;
         }
 
         // Adding an EOF after entire code is scanned
         tokens.add(new Token(TokenType.EOF, "", null, line));
         return tokens;
+    }
+
+    private static class ScannerError extends RuntimeException {
+    }
+
+    private ScannerError panic(String message) {
+        Lox.error(new Token(isAtEnd() ? TokenType.EOF : null, String.valueOf(peek()), null, line), message);
+        return new ScannerError();
     }
 
     private boolean isAtEnd() {
@@ -54,16 +66,22 @@ public class Scanner {
                 addToken(TokenType.DOT);
                 break;
             case '-':
-                addToken(TokenType.MINUS);
+                addToken(match('-') ? TokenType.MINUS_MINUS : TokenType.MINUS);
                 break;
             case '+':
-                addToken(TokenType.PLUS);
+                addToken(match('+') ? TokenType.PLUS_PLUS : TokenType.PLUS);
                 break;
             case ';':
                 addToken(TokenType.SEMICOLON);
                 break;
             case '*':
                 addToken(TokenType.STAR);
+                break;
+            case '?':
+                addToken(TokenType.Q_MARK);
+                break;
+            case ':':
+                addToken(TokenType.COLON);
                 break;
             // Single or double character token
             case '!':
@@ -106,7 +124,7 @@ public class Scanner {
                  * Since providing checks for each and every digit is tedious
                  * (might add check for 0 to support hexadecimal and binary
                  * or octal forms later) we are keeping it in default case and
-                 * checking if the its a digit.
+                 * checking if the first character is a digit.
                  * 
                  * The isDigit custom utility function is used instead of default
                  * one to avoid non-ASCII digit handling, to KISS.
@@ -130,7 +148,7 @@ public class Scanner {
                      * -> Also none of the code will be executed as hasError
                      * will be set to true
                      */
-                    Lox.error(new Token(null, String.valueOf(c), null, line), "Unexpected Character");
+                    throw panic("Unexpected Character");
                 }
                 break;
         }
@@ -139,7 +157,6 @@ public class Scanner {
     /*
      * Consumes the current character and advances by one step
      */
-
     private char consume() {
         if (isAtEnd())
             return '\0';
