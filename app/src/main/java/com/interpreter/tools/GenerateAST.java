@@ -22,12 +22,26 @@ public class GenerateAST {
          * Defining the Grammar for our JLox
          */
         defineAST(outputDir, "Expr", Arrays.asList(
+                "Assign      : Token name, Expr value",
                 "Conditional : Token operator, Expr left, Expr mid, Expr right",
                 "Binary      : Expr left, Token operator, Expr right",
                 "Grouping    : Expr expression",
                 "Literal     : Object value",
                 "Unary       : Token operator, Expr right",
-                "PostFix     : Expr left, Token operator"));
+                "PostFix     : Expr left, Token operator",
+                "Variable    : Token name")); /*
+                                               * This Variable definition is used for already declared
+                                               * variables to access their values in an expression
+                                               */
+        defineAST(outputDir, "Stmt", Arrays.asList(
+                "Block       : List<Stmt> statements",
+                "Expression  : Expr expression",
+                "Print       : Expr expression",
+                "Var         : Token name, Expr initializer")); /*
+                                                                 * This variable definition is used when
+                                                                 * the variable is decalared for the first time
+                                                                 * either with a value or with "nil".
+                                                                 */
     }
 
     private static void defineAST(

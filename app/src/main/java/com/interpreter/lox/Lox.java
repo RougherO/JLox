@@ -55,18 +55,16 @@ public class Lox {
             return;
 
         Parser parser = new Parser(tokens);
-        Expr expression = parser.parse();
+        List<Stmt> statments = parser.parse();
 
         if (hasError)
             return;
 
         Interpreter interpreter = new Interpreter();
-        interpreter.interprete(expression);
+        interpreter.interprete(statments);
 
         if (hasRuntimeError)
             return;
-
-        System.out.println(new AstPrinter().print(expression));
     }
 
     public static void error(Token token, String message) {

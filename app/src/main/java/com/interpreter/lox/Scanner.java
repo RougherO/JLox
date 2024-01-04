@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+// import com.interpreter.lox.Error.ScannerError;
+
 public class Scanner {
     Scanner(String source) {
         this.source = source;
@@ -16,21 +18,14 @@ public class Scanner {
                 start = current;
                 scanToken();
             }
-        } catch (ScannerError e) {
+        } catch (LoxError.ScannerError e) {
+            LoxError.panic(e);
             return null;
         }
 
         // Adding an EOF after entire code is scanned
         tokens.add(new Token(TokenType.EOF, "", null, line));
         return tokens;
-    }
-
-    private static class ScannerError extends RuntimeException {
-    }
-
-    private ScannerError panic(String message) {
-        Lox.error(new Token(isAtEnd() ? TokenType.EOF : null, String.valueOf(peek()), null, line), message);
-        return new ScannerError();
     }
 
     private boolean isAtEnd() {
@@ -148,7 +143,8 @@ public class Scanner {
                      * -> Also none of the code will be executed as hasError
                      * will be set to true
                      */
-                    throw panic("Unexpected Character");
+                    throw new LoxError.ScannerError(new Token(null, String.valueOf(c), null, line),
+                            "Unexpected Character");
                 }
                 break;
         }
@@ -314,7 +310,7 @@ public class Scanner {
         keywords.put("super", TokenType.SUPER);
         keywords.put("this", TokenType.THIS);
         keywords.put("true", TokenType.TRUE);
-        keywords.put("var", TokenType.VAR);
+        keywords.put("let", TokenType.LET);
         keywords.put("while", TokenType.WHILE);
     }
 

@@ -1,14 +1,88 @@
 package com.interpreter.lox;
 
-public class Interpreter implements Expr.Visitor<Object> {
+import java.util.List;
 
-    void interprete(Expr expression) {
+/* 
+ * Notice we use Expr.Visitor<Void> as Statements have 
+ * no return values -> statments don't produce any values.
+ */
+public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+
+    void interprete(List<Stmt> statements) {
         try {
-            Object value = evaluate(expression);
-            System.out.println(stringify(value));
-        } catch (RuntimeError e) {
-            Lox.runtimeError(e.token, e.getMessage());
+            for (Stmt statement : statements) {
+                execute(statement);
+            }
+        } catch (LoxError.RuntimeError error) {
+            Lox.runtimeError(error.token, error.getMessage());
         }
+    }
+
+    private void execute(Stmt stmt) {
+        stmt.accept(this);
+    }
+
+    private void executeBlock(List<Stmt> statements, Environment environment) {
+        Environment outer = this.environment;
+
+        try {
+            this.environment = environment;
+
+            for (Stmt statement : statements) {
+                execute(statement);
+            }
+        } catch (LoxError.RuntimeError error) {
+            this.environment = outer;
+            throw error;
+        } finally {
+            this.environment = outer;
+        }
+    }
+
+    private Object evaluate(Expr expr) {
+        return expr.accept(this);
+    }
+
+    @Override
+    public Void visitBlockStmt(Stmt.Block stmt) {
+        executeBlock(stmt.statements, new Environment(environment));
+        return null;
+    }
+
+    @Override
+    public Void visitVarStmt(Stmt.Var stmt) {
+        Object value = null;
+        if (stmt.initializer != null) {
+            value = evaluate(stmt.initializer);
+        }
+
+        environment.define(stmt.name, value);
+        return null;
+    }
+
+    @Override
+    public Void visitExpressionStmt(Stmt.Expression stmt) {
+        evaluate(stmt.expression);
+        return null;
+    }
+
+    @Override
+    public Object visitAssignExpr(Expr.Assign expr) {
+        Object value = evaluate(expr.value);
+        environment.assign(expr.name, value);
+        return value;
+    }
+
+    @Override
+    public Object visitVariableExpr(Expr.Variable expr) {
+        return environment.fetch(expr.name);
+    }
+
+    @Override
+    public Void visitPrintStmt(Stmt.Print stmt) {
+        Object value = evaluate(stmt.expression);
+        System.out.println(stringify(value));
+        return null;
     }
 
     @Override
@@ -18,7 +92,8 @@ public class Interpreter implements Expr.Visitor<Object> {
 
     @Override
     public Object visitGroupingExpr(Expr.Grouping expr) {
-        return evaluate(expr.expression);
+        Object value = evaluate(expr.expression);
+        return value;
     }
 
     @Override
@@ -64,7 +139,7 @@ public class Interpreter implements Expr.Visitor<Object> {
                  */
                 if (left instanceof String || right instanceof String)
                     return stringify(left) + stringify(right);
-                throw new RuntimeError(expr.operator, "Either operands must be string or both numbers.");
+                throw new LoxError.RuntimeError(expr.operator, "Either operands must be string or both numbers.");
             case MINUS:
                 checkNumberOperand(expr.operator, left, right);
                 return (double) left - (double) right;
@@ -128,13 +203,10 @@ public class Interpreter implements Expr.Visitor<Object> {
                 return (double) left;
         }
 
-        throw new RuntimeError(expr.operator, "Unexpected PostFix operator.");
+        throw new LoxError.RuntimeError(expr.operator, "Unexpected PostFix operator.");
     }
 
-    private Object evaluate(Expr expr) {
-        return expr.accept(this);
-    }
-
+    // To convert all Java objects to appropriate Lox strings
     private String stringify(Object obj) {
         if (obj == null)
             return "nil";
@@ -165,6 +237,7 @@ public class Interpreter implements Expr.Visitor<Object> {
         return true;
     }
 
+    // Custom comparison for Lox based on their truthy values
     private boolean isEqual(Object obj1, Object obj2) {
         if (obj1 == null && obj2 == null)
             return true;
@@ -174,24 +247,24 @@ public class Interpreter implements Expr.Visitor<Object> {
         return obj1.equals(obj2);
     }
 
+    // Checks whether all operands are number types (double)
     private void checkNumberOperand(Token operator, Object right) {
         if (right instanceof Double)
             return;
-        throw new RuntimeError(operator, "Expected operands to be numbers");
+        throw new LoxError.RuntimeError(operator, "Expected operands to be numbers");
     }
 
     private void checkNumberOperand(Token operator, Object left, Object right) {
         if (left instanceof Double && right instanceof Double)
             return;
-        throw new RuntimeError(operator, "Expected operands to be numbers");
+        throw new LoxError.RuntimeError(operator, "Expected operands to be numbers");
     }
 
-    private class RuntimeError extends RuntimeException {
-        RuntimeError(Token token, String message) {
-            super(message);
-            this.token = token;
-        }
-
-        final Token token;
-    }
+    /*
+     * This is our global namespace environment containing all
+     * global variables purposefully declared as an interpreter
+     * field so that the global environment stays in memory as
+     * long as the interpreter stays alive.
+     */
+    private Environment environment = new Environment();
 }

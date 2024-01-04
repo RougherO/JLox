@@ -1,5 +1,13 @@
 /*
- * expression   -> conditional ;
+ * program      -> declaration* EOF ;
+ * declaration  -> varDecl | statement ;
+ * varDecl      -> "let" IDENTIFIER ( "=" expression )? ";" ;
+ * statement    -> exprStmt | printStmt | block ;
+ * exprStmt     -> expression ";" ;
+ * printStmt    -> "print(" expression ");" ;
+ * block        -> "{" declaration* "}" ;
+ * expression   -> assignment ;
+ * assignment   -> IDENTIFIER "=" assignment | conditional ;
  * conditional  -> equality ( "?" expression ":" conditional )? ; (*)  // My thoughts : conditional -> ( equality "?" expression ":" )* conditional ;
  *                                                                                      conditional -> ( equality "?" expression ":" )* equality ;
  *                                                                     // Also why we need condtional instead of simple expression there is because
@@ -11,8 +19,9 @@
  * comparison   -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
  * term         -> factor ( ( "-" | "+" ) factor )* ;
  * factor       -> unary ( ( "/" | "*" ) unary )*;
+ * unary        -> ( "-" | "!" | "++" | "--" ) unary | postfix ;
  * postfix      -> primary ( "++" | "--" )* 
- * primary      -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" 
+ * primary      -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER 
  *                 // Error production
  *                 | ( "!=" | "==" ) equality
  *                 | ( ">" | ">=" | "<" | "<=" ) comparison
@@ -23,6 +32,7 @@
 
 package com.interpreter.lox;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class Parser {
@@ -30,20 +40,128 @@ public class Parser {
         this.tokens = tokens;
     }
 
-    public Expr parse() {
+    public List<Stmt> parse() {
+        List<Stmt> statements = new ArrayList<>();
         try {
-            Expr expr = expression();
-            if (isAtEnd())
-                return expr;
-            else
-                throw panic("Expected operand here.");
-        } catch (ParserError error) {
+            while (!isAtEnd()) {
+                statements.add(declaration());
+            }
+        } catch (LoxError.ParserError error) {
+            LoxError.panic(error);
             return null;
         }
+
+        return statements;
+    }
+
+    private Stmt declaration() {
+        if (match(TokenType.LET))
+            return varDeclaration();
+
+        return statement();
+    }
+
+    private Stmt varDeclaration() {
+        if (!match(TokenType.IDENTIFIER))
+            throw new LoxError.ParserError(peek(), "Invalid variable name.");
+        Token name = peekPrev();
+
+        Expr initializer = null;
+        if (match(TokenType.EQUAL))
+            initializer = expression();
+
+        if (!match(TokenType.SEMICOLON))
+            throw new LoxError.ParserError(peek(), "Expected ';' after variable declaration.");
+
+        return new Stmt.Var(name, initializer);
+    }
+
+    private Stmt statement() {
+        if (match(TokenType.PRINT))
+            return printStatement(); // Essentially we are baking print into the language itself
+
+        return expressionStatement();
+    }
+
+    private Stmt printStatement() {
+        if (!match(TokenType.LEFT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected '(' after print.");
+        }
+        Expr expr = expression();
+        if (!match(TokenType.RIGHT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected ')' after print expression.");
+        }
+        if (!match(TokenType.SEMICOLON))
+            throw new LoxError.ParserError(peek(), "Expected ';' after expression.");
+
+        return new Stmt.Print(expr);
+    }
+
+    private Stmt expressionStatement() {
+        Expr expr = expression();
+        if (!match(TokenType.SEMICOLON))
+            throw new LoxError.ParserError(peek(), "Expected ';' after expression.");
+
+        return new Stmt.Expression(expr);
     }
 
     private Expr expression() {
-        return conditional();
+        return assignment();
+    }
+
+    /*
+     * Notice how we evaluate the lhs as if it
+     * were an individual expression.
+     * 
+     * " This conversion works because it turns
+     * out that every valid assignment target
+     * happens to also be valid syntax as a
+     * normal expression. " - Nystrom
+     * 
+     * Eg.
+     * 
+     * ```
+     * newPoint(x + 2, 0).y = 3;
+     * ```
+     * " The left-hand side of that assignment
+     * could also work as a valid expression. "
+     * 
+     * ```
+     * newPoint(x + 2, 0).y;
+     * ```
+     * 
+     * This means we can parse the left-hand side
+     * as if it were an expression and then after
+     * the fact produce a syntax tree that turns
+     * it into an assignment target. If the left-hand
+     * side expression isn’t a valid assignment target,
+     * we fail with a syntax error. That ensures we
+     * report an error on code like this:
+     * ```
+     * a + b = c;
+     * ```
+     */
+    private Expr assignment() {
+        Expr expr = conditional();
+
+        if (match(TokenType.EQUAL)) {
+            Token operator = peekPrev();
+            /*
+             * As assignment is right associative instead of looping
+             * through all assignment expression we simply evaluate rhs
+             * through recursion.
+             */
+            Expr value = assignment();
+
+            if (expr instanceof Expr.Variable) {
+                Token name = ((Expr.Variable) expr).name;
+                return new Expr.Assign(name, value);
+            }
+
+            throw new LoxError.RuntimeError(operator, "Invalid assignment target.");
+        }
+
+        return expr;
     }
 
     private Expr conditional() {
@@ -56,7 +174,7 @@ public class Parser {
                 Expr right = conditional();
                 expr = new Expr.Conditional(operator, expr, mid, right);
             } else {
-                throw panic("Expected : after if branch");
+                throw new LoxError.ParserError(peek(), "Expected : after if branch");
             }
         }
 
@@ -147,10 +265,12 @@ public class Parser {
             return new Expr.Literal(null);
         if (match(TokenType.NUMBER, TokenType.STRING))
             return new Expr.Literal(peekPrev().literal);
+        if (match(TokenType.IDENTIFIER))
+            return new Expr.Variable(peekPrev());
         if (match(TokenType.LEFT_PAREN)) {
             Expr expr = expression();
             if (!match(TokenType.RIGHT_PAREN)) {
-                throw panic("Expected ')' after expression.");
+                throw new LoxError.ParserError(peek(), "Expected ')' after expression.");
             }
             return new Expr.Grouping(expr);
         }
@@ -166,37 +286,11 @@ public class Parser {
              * We just start reparsing from next available token
              * as a new expression.
              */
-            throw panic("Expected left hand side of '" + peekPrev().lexeme + "'");
+            throw new LoxError.ParserError(peek(), "Expected left hand side of '" + peekPrev().lexeme + "'");
             // return expression();
         }
 
-        throw panic("Expected expression here.");
-    }
-
-    private static class ParserError extends RuntimeException {
-    }
-
-    private ParserError panic(String message) {
-        Lox.error(peek(), message);
-        return new ParserError();
-    }
-
-    private void synchronize() {
-        while (!isAtEnd()) {
-            if (peekPrev().type == TokenType.SEMICOLON)
-                return;
-            switch (peek().type) {
-                case CLASS:
-                case FUN:
-                case VAR:
-                case FOR:
-                case IF:
-                case WHILE:
-                case PRINT:
-                case RETURN:
-                    return;
-            }
-        }
+        throw new LoxError.ParserError(peek(), "Expected expression here.");
     }
 
     private Token consume() {

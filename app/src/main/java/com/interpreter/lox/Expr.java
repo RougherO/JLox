@@ -4,6 +4,8 @@ import java.util.List;
 
 abstract class Expr {
     interface Visitor<T> {
+        T visitAssignExpr(Assign expr);
+
         T visitConditionalExpr(Conditional expr);
 
         T visitBinaryExpr(Binary expr);
@@ -16,6 +18,23 @@ abstract class Expr {
 
         T visitPostFixExpr(PostFix expr);
 
+        T visitVariableExpr(Variable expr);
+
+    }
+
+    static class Assign extends Expr {
+        Assign(Token name, Expr value) {
+            this.name = name;
+            this.value = value;
+        }
+
+        @Override
+        <T> T accept(Visitor<T> visitor) {
+            return visitor.visitAssignExpr(this);
+        }
+
+        final Token name;
+        final Expr value;
     }
 
     static class Conditional extends Expr {
@@ -108,6 +127,19 @@ abstract class Expr {
 
         final Expr left;
         final Token operator;
+    }
+
+    static class Variable extends Expr {
+        Variable(Token name) {
+            this.name = name;
+        }
+
+        @Override
+        <T> T accept(Visitor<T> visitor) {
+            return visitor.visitVariableExpr(this);
+        }
+
+        final Token name;
     }
 
     abstract <T> T accept(Visitor<T> visitor);
