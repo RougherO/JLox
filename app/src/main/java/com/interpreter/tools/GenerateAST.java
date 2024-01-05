@@ -22,20 +22,24 @@ public class GenerateAST {
          * Defining the Grammar for our JLox
          */
         defineAST(outputDir, "Expr", Arrays.asList(
+                "Logical     : Expr left, Token operator, Expr right",
                 "Assign      : Token name, Expr value",
                 "Conditional : Token operator, Expr left, Expr mid, Expr right",
                 "Binary      : Expr left, Token operator, Expr right",
                 "Grouping    : Expr expression",
                 "Literal     : Object value",
                 "Unary       : Token operator, Expr right",
-                "PostFix     : Expr left, Token operator",
+                "PrePost     : Token name, Token operator, boolean post",
                 "Variable    : Token name")); /*
                                                * This Variable definition is used for already declared
                                                * variables to access their values in an expression
                                                */
         defineAST(outputDir, "Stmt", Arrays.asList(
+                // "Jump : Token operation, Token label",
+                "While       : Token label, Expr condition, Stmt body",
                 "Block       : List<Stmt> statements",
                 "Expression  : Expr expression",
+                "If          : Expr condition, Stmt thenBranch, Stmt elsebranch",
                 "Print       : Expr expression",
                 "Var         : Token name, Expr initializer")); /*
                                                                  * This variable definition is used when

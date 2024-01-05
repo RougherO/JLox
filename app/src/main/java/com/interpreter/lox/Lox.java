@@ -63,7 +63,7 @@ public class Lox {
         Interpreter interpreter = new Interpreter();
         interpreter.interprete(statments);
 
-        if (hasRuntimeError)
+        if (hasError)
             return;
     }
 

@@ -278,6 +278,12 @@ public class Scanner {
         while (isAlphaNum(peek()))
             consume();
 
+        if (peek() == ':') {
+            TokenType type = TokenType.LABEL;
+            addToken(type);
+            return;
+        }
+
         String text = source.substring(start, current);
         TokenType type = keywords.get(text);
         if (type == null)
@@ -312,6 +318,8 @@ public class Scanner {
         keywords.put("true", TokenType.TRUE);
         keywords.put("let", TokenType.LET);
         keywords.put("while", TokenType.WHILE);
+        keywords.put("break", TokenType.BREAK);
+        keywords.put("continue", TokenType.CONTINUE);
     }
 
     /*

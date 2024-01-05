@@ -2,37 +2,42 @@
  * program      -> declaration* EOF ;
  * declaration  -> varDecl | statement ;
  * varDecl      -> "let" IDENTIFIER ( "=" expression )? ";" ;
- * statement    -> exprStmt | printStmt | block ;
+ * label        -> IDENTIFIER ":" ;
+ * statement    -> exprStmt | ifStmt | ( label? forStmt | whileStmt ) | block | printStmt | jumpStmt ) ;
+ * forStmt      -> "for" "(" ( varDecl | exprStmt ) expression? ";" expression? ")" statement ;
+ * whileStmt    -> "while" "(" expression ")" statement ;
+ * ifStmt       -> "if" "(" expression ")" statement ( "else" statement )? ;
  * exprStmt     -> expression ";" ;
- * printStmt    -> "print(" expression ");" ;
+ * printStmt    -> "print" "(" expression ")" ";" ;
  * block        -> "{" declaration* "}" ;
+ * jumpStmt     -> ( "break" | "continue" ) ";" ;
  * expression   -> assignment ;
  * assignment   -> IDENTIFIER "=" assignment | conditional ;
- * conditional  -> equality ( "?" expression ":" conditional )? ; (*)  // My thoughts : conditional -> ( equality "?" expression ":" )* conditional ;
- *                                                                                      conditional -> ( equality "?" expression ":" )* equality ;
- *                                                                     // Also why we need condtional instead of simple expression there is because
- *                                                                     // we can chain ternary ops like this E1 ? E2 : E3 ? E4 : E5 else we would have
- *                                                                     // to use grouping to recurse back to conditionals(2nd example) 
- *                                                                     // like E1 ? E2 : (E3 ? E4 : E5) which is probably better imo.
- *                                                                     // Might change it in future releases
+ * conditional  -> logical_or ( "?" expression ":" conditional )? ; (*)  
+ * logical_or   -> logical_and ( "or" logical_and )* ;
+ * logical_and  -> equality ( "and" equality )* ;
  * equality     -> comparison ( ( "!=" | "==" ) comparison )* ;
  * comparison   -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
  * term         -> factor ( ( "-" | "+" ) factor )* ;
  * factor       -> unary ( ( "/" | "*" ) unary )*;
- * unary        -> ( "-" | "!" | "++" | "--" ) unary | postfix ;
- * postfix      -> primary ( "++" | "--" )* 
- * primary      -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER 
+ * unary        -> ( "-" | "!" ) unary | postfix ;
+ * postfix      -> IDENTIFIER ( "++" | "--" )? | primary ;
+ * primary      -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | prefix
  *                 // Error production
  *                 | ( "!=" | "==" ) equality
  *                 | ( ">" | ">=" | "<" | "<=" ) comparison
- *                 | ( "+" ) term
- *                 | ( "/" | "*" ) factor ;
+ *                 | "+" term
+ *                 | ( "/" | "*" ) factor
+ *                 | "=" assignment
+ *                 | "let" "=" declaration ;
+ * prefix       -> ( "++" | "--" )? IDENTIFIER ;
  * (*) -> these have been taken from https://github.com/munificent/craftinginterpreters/blob/master/note/answers/chapter06_parsing.md
  */
 
 package com.interpreter.lox;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Parser {
@@ -63,7 +68,7 @@ public class Parser {
 
     private Stmt varDeclaration() {
         if (!match(TokenType.IDENTIFIER))
-            throw new LoxError.ParserError(peek(), "Invalid variable name.");
+            throw new LoxError.ParserError(peek(), "Expected an identifier.");
         Token name = peekPrev();
 
         Expr initializer = null;
@@ -77,10 +82,134 @@ public class Parser {
     }
 
     private Stmt statement() {
+        Token label = null;
+        if (match(TokenType.LABEL)) {
+            label = peekPrev();
+        }
+        if (match(TokenType.FOR))
+            return forStatement(label);
+        if (match(TokenType.WHILE))
+            return whileStatement(label);
+        if (match(TokenType.IF))
+            return ifStatement();
         if (match(TokenType.PRINT))
             return printStatement(); // Essentially we are baking print into the language itself
-
+        if (match(TokenType.LEFT_BRACE))
+            return block();
         return expressionStatement();
+    }
+
+    /*
+     * " The parentheses around the condition are
+     * only half useful. You need some kind of delimiter
+     * between the condition and the then statement,
+     * otherwise the parser can’t tell when it has reached
+     * the end of the condition expression. But the opening
+     * parenthesis after if doesn’t do anything useful.
+     * Dennis Ritchie put it there so he could use ')' as
+     * the ending delimiter without having unbalanced parentheses.
+     * 
+     * Other languages like Lua and some BASICs use a keyword
+     * like then as the ending delimiter and don’t have anything
+     * before the condition. Go and Swift instead require the
+     * statement to be a braced block. That lets them use the {
+     * at the beginning of the statement to tell when the
+     * condition is done. " - Nystrom
+     */
+    private Stmt ifStatement() {
+        if (!match(TokenType.LEFT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected '(' after if.");
+        }
+        Expr condition = expression();
+
+        if (!match(TokenType.RIGHT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected ')' after if condition.");
+        }
+        Stmt thenBranch = statement();
+        Stmt elseBranch = null;
+        if (match(TokenType.ELSE)) {
+            elseBranch = statement();
+        }
+
+        return new Stmt.If(condition, thenBranch, elseBranch);
+    }
+
+    private Stmt forStatement(Token label) {
+        if (!match(TokenType.LEFT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected '(' after while.");
+        }
+
+        Stmt initializer = null;
+        if (!match(TokenType.SEMICOLON)) {
+            if (match(TokenType.LET))
+                initializer = varDeclaration();
+            else
+                initializer = expressionStatement();
+        }
+
+        Expr condition = null;
+        if (peek().type != TokenType.SEMICOLON) {
+            condition = expression();
+        }
+        if (!match(TokenType.SEMICOLON)) {
+            throw new LoxError.ParserError(peek(), "Expected ';' after loop condition.");
+        }
+
+        Expr increment = null;
+        if (peek().type != (TokenType.RIGHT_PAREN)) {
+            increment = expression();
+        }
+        if (!match(TokenType.RIGHT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected ')' after for clauses.");
+        }
+
+        Stmt body = statement();
+
+        // For loop Desugaring -> Converting for loop to a simple while loop
+        if (increment != null) {
+            body = new Stmt.Block(Arrays.asList(
+                    body,
+                    new Stmt.Expression(increment)));
+        }
+
+        if (condition == null)
+            condition = new Expr.Literal(true);
+        body = new Stmt.While(label, condition, body);
+
+        if (initializer != null) {
+            body = new Stmt.Block(Arrays.asList(
+                    initializer,
+                    body));
+        }
+
+        return body;
+    }
+
+    private Stmt whileStatement(Token label) {
+        if (!match(TokenType.LEFT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected '(' after while.");
+        }
+        Expr condition = expression();
+        if (!match(TokenType.RIGHT_PAREN)) {
+            throw new LoxError.ParserError(peek(), "Expected ')' after while condtition.");
+        }
+        Stmt body = statement();
+
+        return new Stmt.While(label, condition, body);
+    }
+
+    private Stmt block() {
+        List<Stmt> statements = new ArrayList<>();
+
+        while (!isAtEnd() && !match(TokenType.RIGHT_BRACE)) {
+            statements.add(declaration());
+        }
+
+        if (peekPrev().type != TokenType.RIGHT_BRACE) {
+            throw new LoxError.ParserError(peekPrev(), "Expected '}' after block.");
+        }
+
+        return new Stmt.Block(statements);
     }
 
     private Stmt printStatement() {
@@ -165,7 +294,7 @@ public class Parser {
     }
 
     private Expr conditional() {
-        Expr expr = equality();
+        Expr expr = logical_or();
 
         if (match(TokenType.Q_MARK)) {
             Token operator = peekPrev();
@@ -176,6 +305,30 @@ public class Parser {
             } else {
                 throw new LoxError.ParserError(peek(), "Expected : after if branch");
             }
+        }
+
+        return expr;
+    }
+
+    private Expr logical_or() {
+        Expr expr = logical_and();
+
+        while (match(TokenType.OR)) {
+            Token operator = peekPrev();
+            Expr right = logical_and();
+            expr = new Expr.Logical(expr, operator, right);
+        }
+
+        return expr;
+    }
+
+    private Expr logical_and() {
+        Expr expr = equality();
+
+        while (match(TokenType.AND)) {
+            Token operator = peekPrev();
+            Expr right = equality();
+            expr = new Expr.Logical(expr, operator, right);
         }
 
         return expr;
@@ -234,9 +387,7 @@ public class Parser {
     }
 
     private Expr unary() {
-        if (match(
-                TokenType.BANG, TokenType.MINUS,
-                TokenType.MINUS_MINUS, TokenType.PLUS_PLUS)) {
+        if (match(TokenType.BANG, TokenType.MINUS)) {
             Token operator = peekPrev();
             Expr right = unary();
             return new Expr.Unary(operator, right);
@@ -246,11 +397,19 @@ public class Parser {
     }
 
     private Expr postfix() {
-        Expr expr = primary();
+        if (match(TokenType.IDENTIFIER)) {
+            Token name = peekPrev();
+            if (match(TokenType.PLUS_PLUS, TokenType.MINUS_MINUS)) {
+                Token operator = peekPrev();
+                return new Expr.PrePost(name, operator, true);
+            }
 
-        while (match(TokenType.PLUS_PLUS, TokenType.MINUS_MINUS)) {
-            Token operator = peekPrev();
-            expr = new Expr.PostFix(expr, operator);
+            return new Expr.Variable(name);
+        }
+
+        Expr expr = primary();
+        if (peek().type == TokenType.PLUS_PLUS || peek().type == TokenType.MINUS_MINUS) {
+            throw new LoxError.ParserError(peekPrev(), "Invalid postfix target.");
         }
 
         return expr;
@@ -265,8 +424,8 @@ public class Parser {
             return new Expr.Literal(null);
         if (match(TokenType.NUMBER, TokenType.STRING))
             return new Expr.Literal(peekPrev().literal);
-        if (match(TokenType.IDENTIFIER))
-            return new Expr.Variable(peekPrev());
+        if (match(TokenType.PLUS_PLUS, TokenType.MINUS_MINUS))
+            return prefix();
         if (match(TokenType.LEFT_PAREN)) {
             Expr expr = expression();
             if (!match(TokenType.RIGHT_PAREN)) {
@@ -279,18 +438,22 @@ public class Parser {
         if (match(
                 TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL,
                 TokenType.GREATER, TokenType.GREATER_EQUAL, TokenType.LESS, TokenType.LESS_EQUAL,
-                TokenType.PLUS, TokenType.SLASH, TokenType.STAR)) {
-            /*
-             * Here we do not throw the error as it is not severe to
-             * cause our interpreter to go out of sync
-             * We just start reparsing from next available token
-             * as a new expression.
-             */
-            throw new LoxError.ParserError(peek(), "Expected left hand side of '" + peekPrev().lexeme + "'");
-            // return expression();
+                TokenType.PLUS, TokenType.SLASH, TokenType.STAR, TokenType.EQUAL)) {
+
+            throw new LoxError.ParserError(peekPrev(), "Expected left hand side of '" + peekPrev().lexeme + "'");
         }
 
         throw new LoxError.ParserError(peek(), "Expected expression here.");
+    }
+
+    private Expr prefix() {
+        Token operator = peekPrev();
+        if (!match(TokenType.IDENTIFIER))
+            throw new LoxError.ParserError(peek(), "Invalid prefix target");
+
+        Token name = peekPrev();
+
+        return new Expr.PrePost(name, operator, false);
     }
 
     private Token consume() {

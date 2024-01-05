@@ -14,12 +14,48 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
                 execute(statement);
             }
         } catch (LoxError.RuntimeError error) {
-            Lox.runtimeError(error.token, error.getMessage());
+            Lox.runtimeError(error.token, error.message);
         }
     }
 
     private void execute(Stmt stmt) {
         stmt.accept(this);
+
+        /*
+         * For postfix expression we store the variables
+         * in a stack in the current environment for the
+         * current statement. When the current statement
+         * execution is over we pop all the postfix variables
+         * and increment/decrement their values.
+         * 
+         * All postfix expressions are modified as soon as
+         * current statement execution is over, i.e., we
+         * find a ';'.
+         */
+        clearStack();
+    }
+
+    private void clearStack() {
+        while (!this.environment.memstack.empty()) {
+            Expr expr = this.environment.memstack.pop();
+            if (expr instanceof Expr.PrePost) {
+                Token name = ((Expr.PrePost) expr).name;
+                Token operator = ((Expr.PrePost) expr).operator;
+                Object value = this.environment.fetch(name);
+                if (!(value instanceof Double)) {
+                    throw new LoxError.RuntimeError(
+                            name,
+                            "Invalid value of '" + name.lexeme
+                                    + "' for post fix expression."
+                                    + " Expected Number type.");
+                }
+                if (operator.type == TokenType.PLUS_PLUS) {
+                    this.environment.assign(name, (Double) value + 1);
+                } else if (operator.type == TokenType.MINUS_MINUS) {
+                    this.environment.assign(name, (Double) value - 1);
+                }
+            }
+        }
     }
 
     private void executeBlock(List<Stmt> statements, Environment environment) {
@@ -32,7 +68,6 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
                 execute(statement);
             }
         } catch (LoxError.RuntimeError error) {
-            this.environment = outer;
             throw error;
         } finally {
             this.environment = outer;
@@ -41,6 +76,30 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
 
     private Object evaluate(Expr expr) {
         return expr.accept(this);
+    }
+
+    @Override
+    public Void visitWhileStmt(Stmt.While stmt) {
+        if (stmt.label != null) {
+            environment.define(stmt.label, stmt);
+        }
+
+        while (isTruthy(evaluate(stmt.condition))) {
+            execute(stmt.body);
+        }
+
+        return null;
+    }
+
+    @Override
+    public Void visitIfStmt(Stmt.If stmt) {
+        if (isTruthy(evaluate(stmt.condition))) {
+            execute(stmt.thenBranch);
+        } else if (stmt.elsebranch != null) {
+            execute(stmt.elsebranch);
+        }
+
+        return null;
     }
 
     @Override
@@ -61,9 +120,37 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Void visitPrintStmt(Stmt.Print stmt) {
+        Object value = evaluate(stmt.expression);
+        System.out.println(stringify(value));
+        return null;
+    }
+
+    @Override
     public Void visitExpressionStmt(Stmt.Expression stmt) {
         evaluate(stmt.expression);
         return null;
+    }
+
+    // P.S.- Here logical expression return the expression values
+    // actually used instead of true or false
+    @Override
+    public Object visitLogicalExpr(Expr.Logical expr) {
+        Object left = evaluate(expr.left);
+
+        if (expr.operator.type == TokenType.OR) {
+            // Notice how we simply return the first
+            // true value found
+            if (isTruthy(left))
+                return left;
+        } else {
+            // Notice how we simply return the first
+            // false value found
+            if (!isTruthy(left))
+                return left;
+        }
+
+        return evaluate(expr.right);
     }
 
     @Override
@@ -76,13 +163,6 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     @Override
     public Object visitVariableExpr(Expr.Variable expr) {
         return environment.fetch(expr.name);
-    }
-
-    @Override
-    public Void visitPrintStmt(Stmt.Print stmt) {
-        Object value = evaluate(stmt.expression);
-        System.out.println(stringify(value));
-        return null;
     }
 
     @Override
@@ -106,12 +186,6 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
             case MINUS:
                 checkNumberOperand(expr.operator, right);
                 return -(double) right;
-            case PLUS_PLUS:
-                checkNumberOperand(expr.operator, right);
-                return (double) right + 1;
-            case MINUS_MINUS:
-                checkNumberOperand(expr.operator, right);
-                return (double) right - 1;
         }
 
         return null;
@@ -139,7 +213,9 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
                  */
                 if (left instanceof String || right instanceof String)
                     return stringify(left) + stringify(right);
-                throw new LoxError.RuntimeError(expr.operator, "Either operands must be string or both numbers.");
+                throw new LoxError.RuntimeError(
+                        expr.operator,
+                        "Either operands must be string or both numbers.");
             case MINUS:
                 checkNumberOperand(expr.operator, left, right);
                 return (double) left - (double) right;
@@ -191,19 +267,30 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
-    public Object visitPostFixExpr(Expr.PostFix expr) {
-        Object left = evaluate(expr.left);
+    public Object visitPrePostExpr(Expr.PrePost expr) {
+        if (!expr.post) {
+            Object value = this.environment.fetch(expr.name);
+            if (!(value instanceof Double)) {
+                throw new LoxError.RuntimeError(
+                        expr.name,
+                        "Invalid value of '" + expr.name.lexeme
+                                + "' for pre fix expression."
+                                + " Expected Number type");
+            }
 
-        switch (expr.operator.type) {
-            case PLUS_PLUS:
-                checkNumberOperand(expr.operator, left);
-                return (double) left;
-            case MINUS_MINUS:
-                checkNumberOperand(expr.operator, left);
-                return (double) left;
+            Object newValue = null;
+            if (expr.operator.type == TokenType.PLUS_PLUS) {
+                newValue = (Double) value + 1;
+            }
+            if (expr.operator.type == TokenType.MINUS_MINUS) {
+                newValue = (Double) value - 1;
+            }
+            this.environment.assign(expr.name, newValue);
+
+            return newValue;
         }
-
-        throw new LoxError.RuntimeError(expr.operator, "Unexpected PostFix operator.");
+        this.environment.memstack.add(expr);
+        return this.environment.fetch(expr.name);
     }
 
     // To convert all Java objects to appropriate Lox strings
@@ -251,13 +338,17 @@ public class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     private void checkNumberOperand(Token operator, Object right) {
         if (right instanceof Double)
             return;
-        throw new LoxError.RuntimeError(operator, "Expected operands to be numbers");
+        throw new LoxError.RuntimeError(
+                operator,
+                "Expected operands to be numbers");
     }
 
     private void checkNumberOperand(Token operator, Object left, Object right) {
         if (left instanceof Double && right instanceof Double)
             return;
-        throw new LoxError.RuntimeError(operator, "Expected operands to be numbers");
+        throw new LoxError.RuntimeError(
+                operator,
+                "Expected operands to be numbers");
     }
 
     /*

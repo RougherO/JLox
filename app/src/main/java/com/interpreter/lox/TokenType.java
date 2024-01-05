@@ -16,11 +16,12 @@ public enum TokenType {
     Q_MARK, COLON,
 
     // Literals.
-    IDENTIFIER, STRING, NUMBER,
+    IDENTIFIER, STRING, NUMBER, LABEL,
 
     // Keywords.
     AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR,
     PRINT, RETURN, SUPER, THIS, TRUE, LET, WHILE,
+    BREAK, CONTINUE,
 
     EOF
 }

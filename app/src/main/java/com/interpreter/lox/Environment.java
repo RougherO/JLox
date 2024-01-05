@@ -1,6 +1,7 @@
 package com.interpreter.lox;
 
 import java.util.Map;
+import java.util.Stack;
 import java.util.HashMap;
 
 public class Environment {
@@ -32,8 +33,9 @@ public class Environment {
         }
         // If current scope didn't have the variable we search in
         // outer scope. If it fails we report it as an error
-        if (outer == null)
+        if (outer == null) {
             throw new LoxError.RuntimeError(var, "Undefined variable '" + var.lexeme + "'.");
+        }
 
         return outer.fetch(var);
     }
@@ -48,6 +50,7 @@ public class Environment {
         }
     }
 
+    private final Environment outer;
     private final Map<String, Object> values = new HashMap<>();
-    final Environment outer;
+    final Stack<Expr> memstack = new Stack<>();
 }
