@@ -5,15 +5,14 @@ Welcome to the documentation for JLox. This guide aims to provide comprehensive 
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [Getting Started](#getting-started)
-3. [Syntax](#syntax)
+2. [Getting Started](./getting-started.md)
+3. [Syntax](./syntax.md)
 4. [Data Types](#data-types)
-5. [Variables](#variables)
-6. [Control Structures](#control-structures)
+5. [Variables](./syntax.md/#variables)
+6. [Control Flow](./control-flow.md)
 7. [Functions](#functions)
 8. [Standard Library](#standard-library)
 9. [Examples](#examples)
-10. [Resources](#resources)
 
 ## Introduction
 

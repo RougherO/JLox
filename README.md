@@ -1,4 +1,4 @@
-    # JLox
+# JLox
 
 Welcome to JLox, a language crafted for learning and educational exploration. This is an attempt at implementing Robert Nystrom's Lox in Java, how its done in the first part of the book [craftinginterpreters](https://www.craftinginterpreters.com/) by Robert Nystrom, combined with some of my own features.
 
